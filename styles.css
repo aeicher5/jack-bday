@@ -134,10 +134,17 @@ img {
 .entry {
     padding: var(--spacing) 0;
     border-bottom: 1px solid #eee;
+    contain: content;
 }
 
 .entry:nth-child(odd) {
     background-color: var(--secondary-color);
+}
+
+/* Add content-visibility to improve rendering performance */
+.entry:not(:nth-child(-n+5)) {
+    content-visibility: auto;
+    contain-intrinsic-size: 1px 800px;
 }
 
 .content {
