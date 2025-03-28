@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jack's Birthday - Photo Gallery</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="gallery.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+</head>
+<body>
+    <header class="gallery-header">
+        <div class="container">
+            <h1>Jack's Birthday</h1>
+            <p class="subtitle">Photo Gallery</p>
+            <div class="button-group">
+                <a href="index.html" class="back-link">Back to Tribute</a>
+                <button id="download-all" class="download-btn">Download All Photos</button>
+            </div>
+        </div>
+    </header>
+
+    <section class="gallery-container">
+        <div class="container">
+            <div class="gallery" id="photo-gallery">
+                <!-- Photos will be loaded dynamically -->
+                <div class="loading">Loading gallery...</div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>Happy 30th Birthday, Jack!</p>
+        </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const gallery = document.getElementById('photo-gallery');
+            const loadingEl = document.querySelector('.loading');
+            
+            // List of all photos from the entries
+            const photoFiles = [
+                "ali_1.HEIC", "ali_2.JPG", "ali_3.HEIC", "ali_4.HEIC", "ali_5.HEIC",
+                "alex_1.HEIC", "alex_2.HEIC", "alex_3.HEIC",
+                "elana_1.heic", "elana_2.heic",
+                "irene_1.HEIC", "irene_2.png", "irene_3.png", "irene_4.png", "irene_5.png", "irene_6.png", "irene_7.png",
+                "grant_1.png", "grant_2.jpg",
+                "diane_1.jpeg",
+                "henry_1.heic", "henry_2.JPG",
+                "phil_1.heic", "phil_2.HEIC",
+                "alborz_1.png", "alborz_2.png", "alborz_3.png", "alborz_4.png", "alborz_5.png", "alborz_6.png", "alborz_7.png", "alborz_8.png",
+                "miles_1.JPEG",
+                "martin_1.heic",
+                "patti_1.heic",
+                "nicky_1.jpeg", "nicky_2.jpeg",
+                "alexc_1.png", "alexc_2.png", "alexc_3.png",
+                "austin_1.PNG", "austin_2.png", "austin_3.png", "austin_4.png",
+                "will_1.PNG",
+                "garrett_1.jpeg",
+                "luc_1.jpeg",
+                "zach_1.heic", "zach_2.heic",
+                "matt_1.JPG", "matt_2.HEIC", "matt_3.jpeg", "matt_4.HEIC",
+                "harry_1.heic",
+                "john_1.JPG",
+                "kabir_1.jpeg", "kabir_2.HEIC", "kabir_3.heic", "kabir_4.JPG"
+            ];
+
+            // Clear loading message
+            loadingEl.textContent = 'Loading gallery... This may take a moment for HEIC images.';
+
+            // Function to create image elements
+            async function createImageElements() {
+                for (const file of photoFiles) {
+                    const isHeic = file.toLowerCase().endsWith('.heic');
+                    const item = document.createElement('div');
+                    item.className = 'gallery-item';
+                    
+                    const imgContainer = document.createElement('div');
+                    imgContainer.className = 'img-container';
+                    
+                    const img = document.createElement('img');
+                    const path = `photos/${file}`;
+                    
+                    // Add loading spinner for each image
+                    const spinner = document.createElement('div');
+                    spinner.className = 'spinner';
+                    imgContainer.appendChild(spinner);
+                    
+                    if (isHeic) {
+                        // For HEIC images, we'll convert them to JPEG
+                        img.setAttribute('data-src', path);
+                        img.setAttribute('data-heic', 'true');
+                        img.alt = `Jack with ${file.split('_')[0]}`;
+                        
+                        // Set placeholder until converted
+                        img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
+                    } else {
+                        // For regular images, just set the source directly
+                        img.src = path;
+                        img.alt = `Jack with ${file.split('_')[0]}`;
+                    }
+                    
+                    imgContainer.appendChild(img);
+                    item.appendChild(imgContainer);
+                    
+                    const caption = document.createElement('p');
+                    caption.className = 'caption';
+                    caption.textContent = `${file.split('_')[0].charAt(0).toUpperCase() + file.split('_')[0].slice(1)}`;
+                    item.appendChild(caption);
+                    
+                    gallery.appendChild(item);
+                }
+                
+                // Remove loading message after all images are added to DOM
+                loadingEl.remove();
+                
+                // Now convert HEIC images one by one
+                const heicImages = document.querySelectorAll('img[data-heic="true"]');
+                for (const heicImg of heicImages) {
+                    await convertHeicImage(heicImg);
+                }
+            }
+            
+            // Function to convert HEIC images
+            async function convertHeicImage(imgElement) {
+                try {
+                    const heicPath = imgElement.getAttribute('data-src');
+                    const spinner = imgElement.parentElement.querySelector('.spinner');
+                    
+                    // Fetch the HEIC file
+                    const response = await fetch(heicPath);
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch ${heicPath}`);
+                    }
+                    
+                    const blob = await response.blob();
+                    
+                    // Convert HEIC to JPEG
+                    const jpegBlob = await heic2any({
+                        blob: blob,
+                        toType: 'image/jpeg',
+                        quality: 0.8
+                    });
+                    
+                    // Create object URL for the converted image
+                    const jpegUrl = URL.createObjectURL(jpegBlob);
+                    
+                    // Update the image source
+                    imgElement.src = jpegUrl;
+                    imgElement.removeAttribute('data-heic');
+                    
+                    // Remove the spinner when image is loaded
+                    imgElement.onload = () => {
+                        if (spinner) spinner.remove();
+                    };
+                } catch (error) {
+                    console.error('Error converting HEIC image:', error);
+                    // If conversion fails, show a placeholder instead
+                    imgElement.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200"%3E%3Crect width="300" height="200" fill="%23eee"%3E%3C/rect%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="Arial" fill="%23999"%3EImage Error%3C/text%3E%3C/svg%3E';
+                    
+                    // Remove the spinner if it exists
+                    const spinner = imgElement.parentElement.querySelector('.spinner');
+                    if (spinner) spinner.remove();
+                }
+            }
+            
+            // Start creating the gallery
+            await createImageElements();
+
+            // Add download functionality
+            const downloadBtn = document.getElementById('download-all');
+            downloadBtn.addEventListener('click', async () => {
+                try {
+                    downloadBtn.textContent = 'Preparing ZIP...';
+                    downloadBtn.disabled = true;
+                    
+                    const zip = new JSZip();
+                    const heicImages = document.querySelectorAll('img[data-heic="true"]');
+                    const regularImages = document.querySelectorAll('img:not([data-heic="true"])');
+                    
+                    // First, add all regular images to the zip
+                    const regularPromises = [];
+                    regularImages.forEach((img, index) => {
+                        if (img.src.startsWith('http') || img.src.startsWith('photos/')) {
+                            const src = img.src.startsWith('photos/') ? img.src : img.getAttribute('data-src');
+                            if (!src) return;
+                            
+                            const promise = fetch(src)
+                                .then(response => response.blob())
+                                .then(blob => {
+                                    const fileName = src.split('/').pop();
+                                    zip.file(fileName, blob);
+                                })
+                                .catch(err => console.error(`Error adding ${src} to zip:`, err));
+                            
+                            regularPromises.push(promise);
+                        }
+                    });
+                    
+                    // Wait for all regular images to be added
+                    await Promise.all(regularPromises);
+                    
+                    // Then add all HEIC images as JPGs
+                    const heicPromises = [];
+                    heicImages.forEach((img, index) => {
+                        const src = img.getAttribute('data-src');
+                        if (!src) return;
+                        
+                        const promise = fetch(src)
+                            .then(response => response.blob())
+                            .then(async blob => {
+                                // Convert HEIC to JPEG
+                                const jpegBlob = await heic2any({
+                                    blob: blob,
+                                    toType: 'image/jpeg',
+                                    quality: 0.8
+                                });
+                                
+                                const fileName = src.split('/').pop().replace(/\.heic$|\.HEIC$/i, '.jpg');
+                                zip.file(fileName, jpegBlob);
+                            })
+                            .catch(err => console.error(`Error converting ${src}:`, err));
+                        
+                        heicPromises.push(promise);
+                    });
+                    
+                    // Wait for all HEIC images to be converted and added
+                    await Promise.all(heicPromises);
+                    
+                    // Generate the zip file
+                    const zipBlob = await zip.generateAsync({ type: 'blob' });
+                    
+                    // Save the zip file
+                    saveAs(zipBlob, 'jack_birthday_photos.zip');
+                    
+                    // Reset the button
+                    downloadBtn.textContent = 'Download All Photos';
+                    downloadBtn.disabled = false;
+                } catch (error) {
+                    console.error('Error creating zip file:', error);
+                    downloadBtn.textContent = 'Download Failed';
+                    setTimeout(() => {
+                        downloadBtn.textContent = 'Download All Photos';
+                        downloadBtn.disabled = false;
+                    }, 3000);
+                }
+            });
+        });
+    </script>
+</body>
+</html> 
