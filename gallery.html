@@ -47,29 +47,29 @@
             
             // List of all photos from the entries
             const photoFiles = [
-                "ali_2.JPG", "ali_3.HEIC", "ali_4.HEIC", "ali_5.HEIC",
-                "alex_1.HEIC", "alex_2.HEIC", "alex_3.HEIC",
-                "elana_1.heic", "elana_2.heic",
-                "irene_1.HEIC", "irene_2.png", "irene_3.png", "irene_4.png", "irene_5.png", "irene_6.png", "irene_7.png",
+                "ali_2.JPG", "ali_3.png", "ali_4.png", "ali_5.png",
+                "alex_1.png", "alex_2.png", "alex_3.png",
+                "elana_1.png", "elana_2.png",
+                "irene_1.png", "irene_2.png", "irene_3.png", "irene_4.png", "irene_5.png", "irene_6.png", "irene_7.png",
                 "grant_1.png", "grant_2.jpg",
                 "diane_1.jpeg",
-                "henry_1.heic", "henry_2.JPG",
-                "phil_1.heic", "phil_2.HEIC",
+                "henry_1.png", "henry_2.JPG",
+                "phil_1.png", "phil_2.png",
                 "alborz_1.png", "alborz_2.png", "alborz_3.png", "alborz_4.png", "alborz_5.png", "alborz_6.png", "alborz_7.png", "alborz_8.png",
                 "miles_1.JPEG",
-                "martin_1.heic",
-                "patti_1.heic",
+                "martin_1.png",
+                "patti_1.png",
                 "nicky_1.jpeg", "nicky_2.jpeg",
                 "alexc_1.png", "alexc_2.png", "alexc_3.png",
                 "austin_1.PNG", "austin_2.png", "austin_3.png", "austin_4.png",
                 "will_1.PNG",
                 "garrett_1.jpeg",
                 "luc_1.jpeg",
-                "zach_1.heic", "zach_2.heic",
-                "matt_1.JPG", "matt_2.HEIC", "matt_3.jpeg", "matt_4.HEIC",
-                "harry_1.heic",
+                "zach_1.png", "zach_2.png",
+                "matt_1.JPG", "matt_2.png", "matt_3.jpeg", "matt_4.png",
+                "harry_1.png",
                 "john_1.JPG",
-                "kabir_1.jpeg", "kabir_2.HEIC", "kabir_3.heic", "kabir_4.JPG"
+                "kabir_1.jpeg", "kabir_2.png", "kabir_3.png", "kabir_4.JPG"
             ];
 
             // Clear loading message
@@ -78,7 +78,7 @@
             // Function to create image elements
             async function createImageElements() {
                 for (const file of photoFiles) {
-                    const isHeic = file.toLowerCase().endsWith('.heic');
+                    const isHeic = file.toLowerCase().endsWith('.png');
                     const item = document.createElement('div');
                     item.className = 'gallery-item';
                     
@@ -223,7 +223,7 @@
                                     quality: 0.8
                                 });
                                 
-                                const fileName = src.split('/').pop().replace(/\.heic$|\.HEIC$/i, '.jpg');
+                                const fileName = src.split('/').pop().replace(/\.png$|\.png$/i, '.jpg');
                                 zip.file(fileName, jpegBlob);
                             })
                             .catch(err => console.error(`Error converting ${src}:`, err));
