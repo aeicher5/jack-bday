@@ -506,6 +506,12 @@
             const supportsIndexedDB = 'indexedDB' in window;
             let imageCache;
             
+            // Store pending conversions to prevent multiple attempts
+            const pendingConversions = new Set();
+            
+            // Track failed images to avoid repeated attempts
+            const failedImages = new Set();
+            
             // Initialize image cache if supported
             if (supportsIndexedDB) {
                 const request = indexedDB.open('imageCache', 1);
@@ -526,64 +532,190 @@
                 };
             }
             
-            // Find all images and add lazy loading
+            // Find all images and prepare them
             const allImages = document.querySelectorAll('.photo-gallery img');
             
-            // Add lazy loading attribute to all images
+            // Replace all HEIC images with placeholder divs initially
             allImages.forEach(img => {
+                const src = img.getAttribute('src');
+                
+                // Set attributes for all images
                 img.setAttribute('loading', 'lazy');
                 img.setAttribute('decoding', 'async');
                 
-                // Add error handling for all images
-                img.onerror = function() {
-                    handleImageError(this);
-                };
+                // Create a placeholder with consistent dimensions
+                const placeholder = document.createElement('div');
+                placeholder.className = 'image-placeholder';
+                placeholder.dataset.src = src;
+                placeholder.style.width = '100%';
+                placeholder.style.height = '100%';
+                placeholder.style.backgroundColor = '#f8f8f8';
+                placeholder.style.borderRadius = '8px';
+                placeholder.style.position = 'relative';
+                
+                // Add loading indicator to placeholder
+                const indicator = document.createElement('div');
+                indicator.className = 'loading-indicator';
+                indicator.textContent = 'Loading...';
+                indicator.style.position = 'absolute';
+                indicator.style.top = '50%';
+                indicator.style.left = '50%';
+                indicator.style.transform = 'translate(-50%, -50%)';
+                indicator.style.color = '#999';
+                indicator.style.fontSize = '1.4rem';
+                
+                placeholder.appendChild(indicator);
+                
+                // Replace the image with the placeholder
+                img.parentNode.replaceChild(placeholder, img);
             });
             
-            // Use Intersection Observer to monitor when images enter viewport
+            // Use Intersection Observer with more conservative thresholds
+            // Process only 2 images at a time
+            let processingCount = 0;
+            const maxProcessingCount = 2;
+            const pendingElements = [];
+            
+            function processNextPending() {
+                if (pendingElements.length === 0 || processingCount >= maxProcessingCount) {
+                    return;
+                }
+                
+                const element = pendingElements.shift();
+                processingCount++;
+                
+                const src = element.dataset.src;
+                
+                // Skip if this image has already failed
+                if (failedImages.has(src)) {
+                    showImageError(element);
+                    processingCount--;
+                    setTimeout(processNextPending, 100);
+                    return;
+                }
+                
+                // Handle based on file type
+                if (src.toLowerCase().endsWith('.heic')) {
+                    // Skip if already processing
+                    if (pendingConversions.has(src)) {
+                        pendingElements.push(element);
+                        processingCount--;
+                        setTimeout(processNextPending, 100);
+                        return;
+                    }
+                    
+                    // Try to get from cache first
+                    if (imageCache) {
+                        getCachedImage(src)
+                            .then(cachedImage => {
+                                if (cachedImage) {
+                                    // Use cached image
+                                    replaceWithImage(element, URL.createObjectURL(cachedImage.blob));
+                                } else {
+                                    // Convert and cache
+                                    convertHeicImage(element);
+                                }
+                            })
+                            .catch(() => {
+                                // Fallback to regular conversion
+                                convertHeicImage(element);
+                            });
+                    } else {
+                        // No cache available, convert directly
+                        convertHeicImage(element);
+                    }
+                } else {
+                    // Regular image - create a new img element
+                    const img = document.createElement('img');
+                    img.src = src;
+                    img.alt = "Photo";
+                    img.style.width = '100%';
+                    img.style.height = '100%';
+                    img.style.objectFit = 'cover';
+                    img.style.borderRadius = '8px';
+                    
+                    // Handle load success
+                    img.onload = function() {
+                        element.parentNode.replaceChild(img, element);
+                        processingCount--;
+                        setTimeout(processNextPending, 100);
+                    };
+                    
+                    // Handle load error
+                    img.onerror = function() {
+                        showImageError(element);
+                        failedImages.add(src);
+                        processingCount--;
+                        setTimeout(processNextPending, 100);
+                    };
+                }
+            }
+            
+            // Create a more conservative Intersection Observer
             const imageObserver = new IntersectionObserver((entries, observer) => {
                 entries.forEach(entry => {
                     if (entry.isIntersecting) {
-                        const img = entry.target;
-                        const src = img.getAttribute('src');
+                        const element = entry.target;
+                        pendingElements.push(element);
+                        observer.unobserve(element);
                         
-                        // If it's a HEIC image, convert it
-                        if (src.toLowerCase().endsWith('.heic')) {
-                            // Try to get from cache first
-                            if (imageCache) {
-                                getCachedImage(src)
-                                    .then(cachedImage => {
-                                        if (cachedImage) {
-                                            // Use cached image
-                                            img.src = URL.createObjectURL(cachedImage.blob);
-                                        } else {
-                                            // Convert and cache
-                                            convertHeicImage(img);
-                                        }
-                                    })
-                                    .catch(() => {
-                                        // Fallback to regular conversion
-                                        convertHeicImage(img);
-                                    });
-                            } else {
-                                // No cache available, convert directly
-                                convertHeicImage(img);
-                            }
-                        }
-                        
-                        // Stop observing once handled
-                        observer.unobserve(img);
+                        // Try to process the next pending element
+                        processNextPending();
                     }
                 });
             }, {
-                rootMargin: '200px 0px', // Start loading before the image enters viewport
-                threshold: 0.01
+                rootMargin: '100px 0px', // Smaller margin to load closer to viewport
+                threshold: 0.1 // Require more visibility before loading
             });
             
-            // Start observing images
-            allImages.forEach(img => {
-                imageObserver.observe(img);
+            // Start observing placeholders
+            document.querySelectorAll('.image-placeholder').forEach(placeholder => {
+                imageObserver.observe(placeholder);
             });
+            
+            // Replace placeholder with actual image
+            function replaceWithImage(placeholder, imageSrc) {
+                const img = document.createElement('img');
+                img.src = imageSrc;
+                img.alt = "Photo";
+                img.style.width = '100%';
+                img.style.height = '100%';
+                img.style.objectFit = 'cover';
+                img.style.borderRadius = '8px';
+                
+                img.onload = function() {
+                    placeholder.parentNode.replaceChild(img, placeholder);
+                    processingCount--;
+                    setTimeout(processNextPending, 100);
+                };
+                
+                img.onerror = function() {
+                    showImageError(placeholder);
+                    failedImages.add(placeholder.dataset.src);
+                    processingCount--;
+                    setTimeout(processNextPending, 100);
+                };
+            }
+            
+            // Show error in place of image
+            function showImageError(element) {
+                const fallbackElement = document.createElement('div');
+                fallbackElement.className = 'image-fallback';
+                fallbackElement.style.width = '100%';
+                fallbackElement.style.height = '280px';
+                fallbackElement.style.backgroundColor = '#f8f8f8';
+                fallbackElement.style.display = 'flex';
+                fallbackElement.style.alignItems = 'center';
+                fallbackElement.style.justifyContent = 'center';
+                fallbackElement.style.borderRadius = '8px';
+                fallbackElement.style.color = '#999';
+                fallbackElement.style.fontSize = '1.4rem';
+                fallbackElement.style.padding = '2rem';
+                fallbackElement.style.textAlign = 'center';
+                fallbackElement.textContent = 'Image unavailable';
+                
+                element.parentNode.replaceChild(fallbackElement, element);
+            }
             
             // Get image from cache
             function getCachedImage(src) {
@@ -620,71 +752,17 @@
                 });
             }
             
-            // Function to handle image errors
-            function handleImageError(img) {
-                const imgWrapper = img.parentElement;
-                
-                // Remove any existing spinner if present
-                const existingSpinner = imgWrapper.querySelector('.spinner');
-                if (existingSpinner) {
-                    existingSpinner.remove();
-                }
-                
-                // Create a fallback container
-                const fallbackElement = document.createElement('div');
-                fallbackElement.className = 'image-fallback';
-                fallbackElement.style.width = '100%';
-                fallbackElement.style.height = '100%';
-                fallbackElement.style.backgroundColor = '#f8f8f8';
-                fallbackElement.style.display = 'flex';
-                fallbackElement.style.alignItems = 'center';
-                fallbackElement.style.justifyContent = 'center';
-                fallbackElement.style.borderRadius = '8px';
-                fallbackElement.style.color = '#999';
-                fallbackElement.style.fontSize = '1.4rem';
-                fallbackElement.style.padding = '2rem';
-                fallbackElement.style.textAlign = 'center';
-                fallbackElement.textContent = 'Image unavailable';
-                
-                // Replace the image with the fallback
-                img.replaceWith(fallbackElement);
-            }
-            
-            // Function to convert HEIC images
-            async function convertHeicImage(img) {
-                const originalSrc = img.getAttribute('src');
-                
-                // Add a loading indicator
-                const parent = img.parentElement;
-                const spinner = document.createElement('div');
-                spinner.className = 'spinner';
-                spinner.style.position = 'absolute';
-                spinner.style.top = '50%';
-                spinner.style.left = '50%';
-                spinner.style.transform = 'translate(-50%, -50%)';
-                spinner.style.width = '40px';
-                spinner.style.height = '40px';
-                spinner.style.border = '4px solid rgba(255, 255, 255, 0.3)';
-                spinner.style.borderRadius = '50%';
-                spinner.style.borderTopColor = '#9c276b';
-                spinner.style.animation = 'spin 1s linear infinite';
-                
-                // Set position relative to the image wrapper
-                const imgWrapper = document.createElement('div');
-                imgWrapper.style.position = 'relative';
-                imgWrapper.style.display = 'inline-block';
-                
-                // Replace the image with our wrapper + image
-                img.parentNode.insertBefore(imgWrapper, img);
-                imgWrapper.appendChild(img);
-                imgWrapper.appendChild(spinner);
+            // Convert HEIC image with better error handling
+            async function convertHeicImage(placeholder) {
+                const src = placeholder.dataset.src;
+                pendingConversions.add(src);
                 
                 try {
-                    // Fetch the HEIC file with a timeout
+                    // Fetch the HEIC file with a shorter timeout
                     const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+                    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
                     
-                    const response = await fetch(originalSrc, { 
+                    const response = await fetch(src, { 
                         signal: controller.signal 
                     }).catch(error => {
                         clearTimeout(timeoutId);
@@ -694,48 +772,75 @@
                     clearTimeout(timeoutId);
                     
                     if (!response.ok) {
-                        throw new Error(`Failed to fetch ${originalSrc}`);
+                        throw new Error(`Failed to fetch ${src}`);
                     }
                     
                     const blob = await response.blob();
                     
-                    // Convert HEIC to JPEG
-                    const jpegBlob = await heic2any({
-                        blob: blob,
-                        toType: 'image/jpeg',
-                        quality: 0.8
+                    // Convert HEIC to JPEG with a timeout
+                    const conversionPromise = new Promise((resolve, reject) => {
+                        const conversionTimeout = setTimeout(() => {
+                            reject(new Error('HEIC conversion timeout'));
+                        }, 15000);
+                        
+                        heic2any({
+                            blob: blob,
+                            toType: 'image/jpeg',
+                            quality: 0.7 // Lower quality for faster conversion
+                        })
+                        .then(result => {
+                            clearTimeout(conversionTimeout);
+                            resolve(result);
+                        })
+                        .catch(error => {
+                            clearTimeout(conversionTimeout);
+                            reject(error);
+                        });
                     });
                     
+                    const jpegBlob = await conversionPromise;
+                    
                     // Cache the result for future use
-                    saveToCache(originalSrc, jpegBlob);
+                    saveToCache(src, jpegBlob);
                     
-                    // Create object URL for the converted image
+                    // Create object URL and replace placeholder
                     const jpegUrl = URL.createObjectURL(jpegBlob);
+                    replaceWithImage(placeholder, jpegUrl);
                     
-                    // Update the image source
-                    img.src = jpegUrl;
-                    
-                    // Remove spinner when image is loaded
-                    img.onload = () => {
-                        spinner.remove();
-                    };
                 } catch (error) {
-                    console.error(`Error converting ${originalSrc}:`, error);
-                    // If conversion fails, handle the error gracefully
-                    spinner.remove();
-                    handleImageError(img);
+                    console.error(`Error processing ${src}:`, error);
+                    showImageError(placeholder);
+                    failedImages.add(src);
+                    processingCount--;
+                    setTimeout(processNextPending, 100);
+                } finally {
+                    pendingConversions.delete(src);
                 }
             }
         });
         
-        // Define the spin animation and styles
+        // Define the styles
         if (!document.querySelector('#heic-spinner-style')) {
             const style = document.createElement('style');
             style.id = 'heic-spinner-style';
             style.textContent = `
-                @keyframes spin {
-                    0% { transform: translate(-50%, -50%) rotate(0deg); }
-                    100% { transform: translate(-50%, -50%) rotate(360deg); }
+                .image-placeholder {
+                    background-color: #f8f8f8;
+                    height: 280px;
+                    border-radius: 8px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                
+                .loading-indicator {
+                    color: #999;
+                    font-size: 1.4rem;
+                }
+                
+                .image-fallback {
+                    background-image: linear-gradient(135deg, #f8f8f8 25%, #efefef 25%, #efefef 50%, #f8f8f8 50%, #f8f8f8 75%, #efefef 75%, #efefef 100%);
+                    background-size: 20px 20px;
                 }
                 
                 .gallery-link {
@@ -757,9 +862,16 @@
                     box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
                 }
                 
-                .image-fallback {
-                    background-image: linear-gradient(135deg, #f8f8f8 25%, #efefef 25%, #efefef 50%, #f8f8f8 50%, #f8f8f8 75%, #efefef 75%, #efefef 100%);
-                    background-size: 20px 20px;
+                @media (max-width: 768px) {
+                    .image-placeholder {
+                        height: 220px;
+                    }
+                }
+                
+                @media (max-width: 480px) {
+                    .image-placeholder {
+                        height: 180px;
+                    }
                 }
             `;
             document.head.appendChild(style);
